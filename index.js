@@ -1,6 +1,7 @@
 var fs = require('fs'),
   _ = require('underscore'),
-  ejs = require('ejs');
+  ejs = require('ejs'),
+  path= require('path');
 
 function VersionFile(options) {
   var self = this;
@@ -19,7 +20,7 @@ function VersionFile(options) {
   self.options['package'] = require(self.options.packageFile);
 }
 
-VersionFile.prototype.apply = function(){
+VersionFile.prototype.apply = function(compiler){
   var self = this;
 
 
@@ -29,29 +30,43 @@ VersionFile.prototype.apply = function(){
    * If we are given a template string in the config, then use it directly.
    * But if we get a file path, fetch the content then use it.
    */
-  if (self.options.templateString){
-    self.writeFile(self.options.templateString);
-  } else {
-    fs.readFile(self.options.template, {encoding: 'utf8'}, function(error, content){
+  compiler.plugin('emit', function(compilation, callback) {
+    if (self.options.templateString){
+      self.writeFile(self.options.templateString, compilation, callback);
+    } else {
+      fs.readFile(self.options.template, {encoding: 'utf8'}, function(error, content){
 
-      if(error){
-        throw error;
-        return;
-      }
+        if(error){
+          throw error;
+          return;
+        }
 
-      self.writeFile(content);
-    });
-  }
+        self.writeFile(content, compilation, callback);
+      });
+    }
+  })
 };
 
 /**
  * Renders the template and writes the version file to the file system.
  * @param templateContent
  */
-VersionFile.prototype.writeFile = function(templateContent){
+VersionFile.prototype.writeFile = function(templateContent, compilation, callback){
   var self = this;
   fileContent = ejs.render(templateContent, self.options);
-  fs.writeFile(self.options.outputFile, fileContent, {flag: 'w'});
+  var relativeOutputPath = path.relative(
+    compilation.options.output.path,
+    self.options.outputFile
+  );
+  compilation.assets[relativeOutputPath] = {
+    source: function() {
+      return fileContent;
+    },
+    size: function() {
+      return fileContent.length;
+    }
+  }
+  callback()
 }
 
 module.exports = VersionFile;
